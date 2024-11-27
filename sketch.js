@@ -1,114 +1,165 @@
-let cellSize = 20;
-let columnCount;
-let rowCount;
-let currentCells = [];
-let nextCells = [];
+// 스크립트 파일의 경로: sketch.js
+
+let cols, rows;
+let cellSize = 50;
+let grid = [];
+let current;
+let stack = [];
+let player;
+let angle = 0;
 
 function setup() {
-  // Set simulation framerate to 10 to avoid flickering
-  frameRate(10);
-  createCanvas(720, 400);
+  createCanvas(800, 800, WEBGL);
+  cols = floor(width / cellSize);
+  rows = floor(height / cellSize);
 
-  // Calculate columns and rows
-  columnCount = floor(width / cellSize);
-  rowCount = floor(height / cellSize);
-
-  // Set each column in current cells to an empty array
-  // This allows cells to be added to this array
-  // The index of the cell will be its row number
-  for (let column = 0; column < columnCount; column++) {
-    currentCells[column] = [];
+  // 미로 생성
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      grid.push(new Cell(x, y));
+    }
   }
 
-  // Repeat the same process for the next cells
-  for (let column = 0; column < columnCount; column++) {
-    nextCells[column] = [];
-  }
+  current = grid[0];
+  current.visited = true;
 
-  noLoop();
-  describe(
-    "Grid of squares that switch between white and black, demonstrating a simulation of John Conway's Game of Life. When clicked, the simulation resets."
-  );
+  player = createVector(cellSize / 2, cellSize / 2);
 }
 
 function draw() {
-  generate();
-  for (let column = 0; column < columnCount; column++) {
-    for (let row = 0; row < rowCount; row++) {
-      // Get cell value (0 or 1)
-      let cell = currentCells[column][row];
+  background(0);
 
-      // Convert cell value to get black (0) for alive or white (255 (white) for dead
-      fill((1 - cell) * 255);
-      stroke(0);
-      rect(column * cellSize, row * cellSize, cellSize, cellSize);
-    }
+  // 카메라 설정 (1인칭 시점)
+  let camX = player.x - width / 2;
+  let camZ = player.y - height / 2;
+  camera(camX, -200, camZ + 400, camX, 0, camZ, 0, 1, 0);
+
+  // 미로 생성 및 그리기
+  for (let cell of grid) {
+    cell.show();
+  }
+
+  // DFS를 사용해 미로 완성
+  let next = current.checkNeighbors();
+  if (next) {
+    next.visited = true;
+
+    // 스택 저장
+    stack.push(current);
+
+    // 벽 제거
+    removeWalls(current, next);
+
+    // 다음 셀로 이동
+    current = next;
+  } else if (stack.length > 0) {
+    current = stack.pop();
+  }
+
+  // 플레이어 그리기
+  push();
+  translate(player.x, 10, player.y);
+  fill(255, 0, 0);
+  sphere(10);
+  pop();
+
+  // 이동 제어
+  handlePlayerMovement();
+}
+
+function handlePlayerMovement() {
+  let speed = 2;
+
+  if (keyIsDown(LEFT_ARROW)) {
+    angle -= 0.05;
+  }
+  if (keyIsDown(RIGHT_ARROW)) {
+    angle += 0.05;
+  }
+  if (keyIsDown(UP_ARROW)) {
+    player.x += cos(angle) * speed;
+    player.y += sin(angle) * speed;
+  }
+  if (keyIsDown(DOWN_ARROW)) {
+    player.x -= cos(angle) * speed;
+    player.y -= sin(angle) * speed;
   }
 }
 
-// Reset board when mouse is pressed
-function mousePressed() {
-  randomizeBoard();
-  loop();
+function index(x, y) {
+  if (x < 0 || y < 0 || x >= cols || y >= rows) return -1;
+  return x + y * cols;
 }
 
-// Fill board randomly
-function randomizeBoard() {
-  for (let column = 0; column < columnCount; column++) {
-    for (let row = 0; row < rowCount; row++) {
-      // Randomly select value of either 0 (dead) or 1 (alive)
-      currentCells[column][row] = random([0, 1]);
-    }
+function removeWalls(a, b) {
+  let x = a.x - b.x;
+  if (x === 1) {
+    a.walls.left = false;
+    b.walls.right = false;
+  } else if (x === -1) {
+    a.walls.right = false;
+    b.walls.left = false;
+  }
+
+  let y = a.y - b.y;
+  if (y === 1) {
+    a.walls.top = false;
+    b.walls.bottom = false;
+  } else if (y === -1) {
+    a.walls.bottom = false;
+    b.walls.top = false;
   }
 }
 
-// Create a new generation
-function generate() {
-  // Loop through every spot in our 2D array and count living neighbors
-  for (let column = 0; column < columnCount; column++) {
-    for (let row = 0; row < rowCount; row++) {
-      // Column left of current cell
-      // if column is at left edge, use modulus to wrap to right edge
-      let left = (column - 1 + columnCount) % columnCount;
-
-      // Column right of current cell
-      // if column is at right edge, use modulus to wrap to left edge
-      let right = (column + 1) % columnCount;
-
-      // Row above current cell
-      // if row is at top edge, use modulus to wrap to bottom edge
-      let above = (row - 1 + rowCount) % rowCount;
-
-      // Row below current cell
-      // if row is at bottom edge, use modulus to wrap to top edge
-      let below = (row + 1) % rowCount;
-
-      // Count living neighbors surrounding current cell
-      let neighbours =
-        currentCells[left][above] +
-        currentCells[column][above] +
-        currentCells[right][above] +
-        currentCells[left][row] +
-        currentCells[right][row] +
-        currentCells[left][below] +
-        currentCells[column][below] +
-        currentCells[right][below];
-
-      // Rules of Life
-      // 1. Any live cell with fewer than two live neighbours dies
-      // 2. Any live cell with more than three live neighbours dies
-      if (neighbours < 2 || neighbours > 3) {
-        nextCells[column][row] = 0;
-        // 4. Any dead cell with exactly three live neighbours will come to life.
-      } else if (neighbours === 3) {
-        nextCells[column][row] = 1;
-        // 3. Any live cell with two or three live neighbours lives, unchanged, to the next generation.
-      } else nextCells[column][row] = currentCells[column][row];
-    }
+class Cell {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.walls = { top: true, right: true, bottom: true, left: true };
+    this.visited = false;
   }
 
-  // Swap the current and next arrays for next generation
-  let temp = currentCells;
-  currentCells = nextCells;
-  nextCells = temp;
+  show() {
+    let x = this.x * cellSize;
+    let y = this.y * cellSize;
+
+    push();
+    translate(x - width / 2, 0, y - height / 2);
+
+    stroke(255);
+    if (this.walls.top) {
+      line(0, 0, 0, cellSize, 0, 0);
+    }
+    if (this.walls.right) {
+      line(cellSize, 0, 0, cellSize, 0, cellSize);
+    }
+    if (this.walls.bottom) {
+      line(0, 0, cellSize, cellSize, 0, cellSize);
+    }
+    if (this.walls.left) {
+      line(0, 0, 0, 0, 0, cellSize);
+    }
+
+    pop();
+  }
+
+  checkNeighbors() {
+    let neighbors = [];
+
+    let top = grid[index(this.x, this.y - 1)];
+    let right = grid[index(this.x + 1, this.y)];
+    let bottom = grid[index(this.x, this.y + 1)];
+    let left = grid[index(this.x - 1, this.y)];
+
+    if (top && !top.visited) neighbors.push(top);
+    if (right && !right.visited) neighbors.push(right);
+    if (bottom && !bottom.visited) neighbors.push(bottom);
+    if (left && !left.visited) neighbors.push(left);
+
+    if (neighbors.length > 0) {
+      return random(neighbors);
+    } else {
+      return undefined;
+    }
+  }
 }
